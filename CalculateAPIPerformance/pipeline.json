@@ -1,0 +1,48 @@
+{
+    "name": "ProduceMTCostAndWeeklyTrendAndDistribution",
+    "properties": {
+        "description": "for each keyURL, Produce MTCost of every call and the weeklyTrend and distribution",
+        "activities": [
+            {
+                "type": "DataLakeAnalyticsU-SQL",
+                "typeProperties": {
+                    "scriptPath": "https://ucmloggingdwstorage.blob.core.windows.net/ucmloggingdwblobcontainer/LoggingData/MTCostAndWeeklyTrendAndDistribution.usql",
+                    "scriptLinkedService": "SampleBlobStorageLinkedService",
+                    "degreeOfParallelism": 10,
+                    "priority": 10,
+                    "parameters": {
+                        "SliceStart": "$$Text.Format('{0:yyyy}-{0:MM}-{0:dd} {0:HH}:{0:mm}:{0:ss}', SliceStart)",
+                        "SliceEnd": "$$Text.Format('{0:yyyy}-{0:MM}-{0:dd} {0:HH}:{0:mm}:{0:ss}', SliceEnd)",
+                        "KeyURL": "UserPreferencesV3"
+                    }
+                },
+                "inputs": [
+                    {
+                        "name": "TVFPerfInfoEvent"
+                    }
+                ],
+                "outputs": [
+                    {
+                        "name": "MTCostAndWeeklyTrendAndDistribution"
+                    }
+                ],
+                "policy": {
+                    "timeout": "01:00:00",
+                    "concurrency": 1,
+                    "retry": 3
+                },
+                "scheduler": {
+                    "frequency": "Day",
+                    "interval": 1
+                },
+                "name": "CalculateUserPreferencesV3",
+                "linkedServiceName": "EdwAnalyticsLinkedService"
+            }
+        ],
+        "start": "2017-07-01T00:00:00Z",
+        "end": "2026-12-31T00:00:00Z",
+        "isPaused": false,
+        "hubName": "UcmLoggingDataFactory_hub",
+        "pipelineMode": "Scheduled"
+    }
+}
