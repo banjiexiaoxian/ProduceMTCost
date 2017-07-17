@@ -1,0 +1,101 @@
+﻿//DECLARE @StartTime DateTime = Convert.ToDateTime(@SliceStart);
+//DECLARE @EndTime DateTime = Convert.ToDateTime(@SliceEnd);
+//DECLARE @OutputFolderPath_Single string = "/Output/MTCost/"+@StartTime.ToString("yyyy")+"/"+@StartTime.ToString("MM")+"/"+@StartTime.ToString("dd")+"MTCost.tsv";
+DECLARE @StartTime DateTime = new DateTime(2017, 07, 01, 00,00,00,00, DateTimeKind.Utc);
+DECLARE @DateKey System.Int32 = Convert.ToInt32(@StartTime.ToString("yyyyMMdd"));
+
+DECLARE @apiName string = "UserPreferencesV3";
+DECLARE @OutputFolderPath string = "/Output/MTCost/"+@apiName;
+DECLARE @MTCostPath string = @OutputFolderPath +@StartTime.ToString("yyyy")+"/"+@StartTime.ToString("MM")+"/"+@StartTime.ToString("dd")+ "MTCost.tsv";
+DECLARE @WeeklyTrendAndDistribution string = @OutputFolderPath +@StartTime.ToString("yyyy")+"/"+@StartTime.ToString("MM")+"/"+@StartTime.ToString("dd")+ "WeeklyTrendAndDistribution.tsv";
+
+REFERENCE ASSEMBLY ProduceMTCost;
+USE DATABASE LoggingData;
+
+
+@APIInfoRawLog =
+    SELECT timestamp,
+           parentstageid,
+           stageid,
+           success,
+           userid,
+           componentname,
+           trackingid,
+           codeblockname,
+           starttime,
+           endtime,
+           elapsedtime,
+           scaledimension,
+           requesturl,
+           //    FROM [LoggingData].[dbo].[PerfInfoEventV1](@StartTime,@EndTime) AS PerfInfoEvent_slice
+           ROW_NUMBER() OVER(PARTITION BY datekey, requesturl ORDER BY trackingid ASC) AS rank
+    FROM [PerfInfoEventV1]
+    WHERE
+    datekey == @DateKey
+    AND requesturl.Contains("UserPreferencesV3");
+
+@OneAPICallLog =
+    REDUCE @APIInfoRawLog 
+    ALL
+//    PRODUCE trackingId string,
+//            totalProcessAPICallCount  long,
+//            totalZeroTrackingIdCount  long  ,
+//            lastTrackingId string
+    PRODUCE StartTime string,
+            TrackingId string,
+            UserId long,
+            MTCost double, 
+            E2ECost double,
+            TotalLogCount long,
+            TotalIgnoreRecordCount long,
+            TotalSameStageIdCount long,
+            TotalNotFoundParentStageIdCount long,
+            TotalIgnoreDecoratorCount long,
+            TotalNetStageNegativeCount long
+    USING new ProduceMTCost.ParseRawLog();
+    
+OUTPUT @OneAPICallLog
+TO @MTCostPath
+USING Outputters.Tsv();
+
+@MTCostRecords =
+
+    SELECT ProduceMTCost.ParseVariable.GetWeek(StartTime) AS StartWeek,
+           ProduceMTCost.ParseVariable.GetDay(StartTime) AS StartDay,
+           StartTime,
+           TrackingId,
+           UserId,
+           MTCost,
+           E2ECost,
+           TotalLogCount,
+           TotalIgnoreRecordCount,
+           TotalSameStageIdCount,
+           TotalNotFoundParentStageIdCount,
+           TotalIgnoreDecoratorCount,
+           TotalNetStageNegativeCount,
+           ROW_NUMBER() OVER(ORDER BY StartTime ASC) AS RowNumber
+    FROM @OneAPICallLog;
+
+@TrendAndDistribution = 
+     REDUCE @MTCostRecords 
+     ALL
+     PRODUCE Date string,
+            TotalCount long,
+            MTCostLt_1000 double,
+            MTCostGt_1000 double,
+            E2ECostLt_3000 double,
+            E2ECostGt_3000 double,
+            MTCostAverageCost double,
+            MTCostPercentileCost_75 double,
+            MTCostPercentileCost_95 double,
+            MTCostMax double,
+            TotalCostAverageCost double,
+            TotalCostPercentileCost_75 double,
+            TotalCostPercentileCost_95 double,
+            TotalCostMax double
+    USING new ProduceMTCost.OneAPIWeeklyAnalyser();
+
+
+OUTPUT @TrendAndDistribution
+TO @WeeklyTrendAndDistribution
+USING Outputters.Tsv();  
